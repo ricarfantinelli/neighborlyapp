@@ -1,0 +1,234 @@
+1) Create Mongo Account under CosmosDB
+
+$RESOURCE_GROUP="neighborly-rg"
+$REGION="westeurope"
+
+# This is the new account here
+$COSMOS_ACCOUNT="neighborly-cosmosdbacc"
+
+az cosmosdb create -n $COSMOS_ACCOUNT -g $RESOURCE_GROUP  `
+--kind MongoDB `
+--locations regionName=$REGION failoverPriority=0 isZoneRedundant=False 
+
+2) Create MongoDB
+
+$COSMOSDB_ACCOUNT="neighborly-cosmosdbacc"
+$RESOURCE_GROUP="neighborly-rg"
+$DATABASE_NAME="neighborly-db"
+$CREATE_LEASE_COLLECTION=0     # yes,no=(1,0)
+
+$SAMPLE_COLLECTION="advertisements"
+$SAMPLE_COLLECTION2="posts"
+
+# Get your CosmosDB key and save as a variable
+$COSMOSDB_KEY=az cosmosdb keys list --name $COSMOSDB_ACCOUNT --resource-group $RESOURCE_GROUP --output tsv | awk '{print $1}'
+# COSMOSDB_KEY = awk '{print $1}' tsv
+
+az cosmosdb create `
+    -n $COSMOSDB_ACCOUNT `
+    -g $RESOURCE_GROUP `
+	--kind MongoDB  
+    
+
+az cosmosdb mongodb database create `
+    -a $COSMOSDB_ACCOUNT `
+    -g $RESOURCE_GROUP `
+    -n $DATABASE_NAME
+		
+az cosmosdb mongodb collection create `
+    -a $COSMOSDB_ACCOUNT `
+    -g $RESOURCE_GROUP `
+    -d $DATABASE_NAME `
+    -n $SAMPLE_COLLECTION `
+    --shard 'user_id' `
+    --throughput 400 `
+	
+az cosmosdb mongodb collection create `
+    -a $COSMOSDB_ACCOUNT `
+    -g $RESOURCE_GROUP `
+    -d $DATABASE_NAME `
+    -n $SAMPLE_COLLECTION2 `
+    --shard 'user_id' `
+    --throughput 400 `
+
+
+
+3) Import Mongo data from json
+If the collection is already created by step 2), mongoimport doesn't work. 
+
+a)Collection Advertisements
+mongoimport --host neighborly-cosmosdbacc.mongo.cosmos.azure.com:10255 -u neighborly-cosmosdbacc -p PCtDs3PXUEeUOfNS7RpARRi1qcncclStOAmvSzCTSlTvuKcimqsCcc9ZgGoRcDQSfcTgansM9VMUXPp2jpmDng== --db neighborly-db --collection advertisements  --ssl --type json --jsonArray --writeConcern="{w:0}" --file sampleAds.json
+
+b) Collection Posts
+
+mongoimport --host neighborly-cosmosdbacc.mongo.cosmos.azure.com:10255 -u neighborly-cosmosdbacc -p PCtDs3PXUEeUOfNS7RpARRi1qcncclStOAmvSzCTSlTvuKcimqsCcc9ZgGoRcDQSfcTgansM9VMUXPp2jpmDng== --db neighborly-db --collection posts  --ssl --type json --jsonArray --writeConcern="{w:0}" --file samplePosts.json
+
+
+API
+---
+
+4) Change the url to connection string, set database and check collection in all __init.py__ within folder NeighborlyAPI
+
+5)"FUNCTIONS_WORKER_RUNTIME": "python" in local.settings.json in folder NeighborlyAPI
+
+6) go to NeighborlyAPI folder
+
+7) c:\> pipenv install (install the virtual env with all dependencies)
+
+8) c:\> pipenv shell (come into virtual env)
+
+9) copy settings.local.host to NeighborlyAPI folder 
+
+10) c:\> func start 
+
+( be careful of spaces, if you have any doubt or it there's an error or unindented something, please check on notepad ++ if there are tabs or spaces.
+  you can use both use Python however just one must be used throughout the file).
+
+11) test your endpoints on Postman. ie: http://localhost:7071/api/getAdvertisements
+
+12) Open VS Code and deploy NeighborlyAPI function in Advanced mode, choose Storage and all the things.
+
+13) test your endpoint on Postman. ie.: https://neighborlyapiric.azurewebsites.net\api\getadvertisements
+
+
+Client
+------
+
+14) go to NeighborlyFrontEnd folder
+
+15) In settings.py file change API_URL to API_URL = "https://neighborlyapiric.azurewebsites.net/api"
+
+16) set in settings SERVER_HOST = 'localhost'  to run locally.
+
+17) py -m venv venv --without-pip 
+    
+18) update pip
+py -m pip install --upgrade pip
+
+19) Had to adjust the version of lib in requirements.txt as one of the functions used in the code cannot be  
+     used along with 1.0.1 version of Werkzeug.
+	 
+Werkzeug==0.16.0
+
+20) Activate the Virtual Env.
+
+21) install all requirements
+pip install -r requirements.txt
+
+22) run a testing by using
+py app.py
+
+do not use flask run in this example otherwise it will ask for settings.py, which is a simple import of file and not a 
+  third party lib.
+
+23) set in settings SERVER_HOST = '0.0.0.0'  to run externally.
+
+24) Deploying web app to Azure (watch out to put the location because if you're in a diff location 
+                                Azure sometimes cannot include correctly the app plan)
+ az webapp up `
+--resource-group neighborly-rg `
+--name NeighborlyFrontric `
+--sku F1 `
+--verbose `
+--location westeurope
+
+25) Create Azure Container Registry
+$RESOURCE_GROUP="neighborly-rg"
+$APP_REGISTRY="neighborlyreg"
+az acr create --resource-group $RESOURCE_GROUP --name $APP_REGISTRY --sku Basic
+
+26) Login to Azure Container Registry via PowerShell
+$REGISTRY_NAME = "neighborlyreg"
+az acr login --name $REGISTRY_NAME
+az acr show --name $REGISTRY_NAME --query loginServer --output table
+
+27) go to NeighborlyAPI folder and create Virtual Env with py venv just to make sure that everything will work fine
+ py -m venv venv --without-pip 
+ 
+ activate venv
+ 
+ pip install -r requirements.txt
+ 
+
+28) Create docker file for image. Go to the folder of function
+c:\> func init --docker-only 
+
+29) DockerFile has been created. Then you need to create an image.
+c:\> docker build -t neighborlyapiriccont:v1 .
+
+30) testing locally the function conternarized
+no need for -e MyDBConnectionString=$cosmosDbConnectionString as I didn't pass env variables within my application
+
+check if there is any docker container running
+c:\> docker ps
+
+if there is then grab the id and
+c:\> docker stop <id>
+
+c:\> docker run -p8080:80 neighborlyapiriccont:v1
+
+
+31) Tag the neighborlyapiriccont:v1 to ...
+c:\> docker tag neighborlyapiriccont:v1 neighborlyreg.azurecr.io/neighborlyapiriccont:v1
+
+32) Push to the container registry (repository)
+c:\> docker push neighborlyreg.azurecr.io/neighborlyapiriccont:v1
+
+33) check whether the container has been deployed
+c:\> az acr repository list --name neighborlyreg.azurecr.io --output table
+
+34) Create AKS
+az aks create --name aksclusterneighborlyv1  --resource-group neighborly-rg --node-count 1  --generate-ssh-keys
+
+35) pulling the credentials from the cluster
+c:\> az aks get-credentials --name aksclusterneighborlyv1 --resource-group neighborly-rg
+
+36) Check connection to the cluster
+c:\> kubectl get nodes
+
+37) Installing Keda from Google for event-driven Autoscalling
+c:\> func kubernetes install --namespace keda 
+
+
+38) Deploying docker images to Kubernets cluster
+c:\> az aks update -n aksclusterneighborlyv1 -g neighborly-rg --attach-acr neighborlyreg
+c:\> func kubernetes deploy --name aksclusterneighborlyv1 --image-name neighborlyreg.azurecr.io/neighborlyapiriccont:v1 —polling-interval 3 —cooldown-period 5
+
+PS: sometimes you will se an error in this func kubernets deploy. Just run it over and it will run successfully.
+
+39) Create logic app
+when Http request on this url:
+https://neighborlyapiric.azurewebsites.net/api/getAdvertisements?
+
+
+40) To access Mongo on cmd line
+get connection string on Azure portal.
+Copy and paste in cmd line
+when connected to mongo, 
+c:\> db
+this checks in which db you're in.
+c:\> use <name-db>
+this make your db active for queries
+c:\>db.posts.find({});
+c:\>db.advertisements.find({});
+
+
+41)
+
+Register my subscription to use EventHub
+Register-AzureRmResourceProvider -ProviderNamespace Microsoft.EventHub
+
+[
+{   "id": "01",   
+  "eventType": "recordInserted",   
+  "subject": "myapp/notes/1",   
+  "eventTime": "2021-01-31T20:06:07+00:00",   
+  "data": {     
+             "title":"Ricardo - testing Event Hub",     
+             "description": "I am testing my Event Hub . Ass by Ricardo"   
+           },  
+   "dataVersion": "1.0",   
+   "metadataVersion": "1",   
+   "topic": "/subscriptions/08cf227f-3334-4035-93af-e2714c224784/resourceGroups/neighborly-rg/providers/Microsoft.EventGrid/systemTopics/event-sub-neig-topic" 
+}
+]
